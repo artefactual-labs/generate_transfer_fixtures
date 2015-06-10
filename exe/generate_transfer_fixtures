@@ -1,0 +1,206 @@
+#!/usr/bin/env ruby
+
+require "securerandom"
+
+require "httparty"
+require "json"
+require "nokogiri"
+
+FORMATS = {
+  formats: [],
+  groups: [],
+  puids: [],
+}
+
+class FPR
+  include HTTParty
+  base_uri "https://fpr.archivematica.org"
+
+  @puids = {}
+  @formats = {}
+  @id_rules = {}
+
+  def self.format_name puid
+    get_format_version(puid)["description"]
+  end
+
+  def self.group puid
+    format = get_format puid
+    return if format.nil?
+
+    format["group"]["description"]
+  end
+
+  def self.extension puid
+    format = get_format_version puid
+    return if format.nil?
+
+    uuid = format["uuid"]
+    rule = get_id_rule_for_format uuid
+    return if rule.nil?
+
+    rule["command_output"]
+  end
+
+  private
+
+  def self.get_format_version puid
+    return @puids[puid] unless @puids[puid].nil?
+
+    response = get "/fpr/api/v2/format-version", query: { format: :json, pronom_id: puid }
+    return if response.response.code != "200"
+
+    @puids[puid] = response["objects"][0]
+  end
+
+  def self.get_format puid
+    return @formats[puid] unless @formats[puid].nil?
+
+    format = get_format_version(puid)
+    return if format.nil?
+
+    response = get format["fmt"], query: { format: :json }
+    return if response.response.code != "200"
+
+    @formats[puid] = response
+  end
+
+  def self.get_id_rule_for_format uuid
+    return @id_rules[uuid] unless @id_rules[uuid].nil?
+
+    response = get "/fpr/api/v2/id-rule", query: { format: :json, fmt: uuid }
+    return if response.response.code != "200"
+  
+    @id_rules[uuid] = response["objects"][0]
+  end
+end
+
+def parse(mets)
+  raise ArgumentError, "No METS provided!" if mets.nil?
+
+  Nokogiri::XML.parse File.read mets
+end
+
+def find_fileGrp(doc)
+  doc.xpath('//mets:fileSec/mets:fileGrp').first
+end
+
+def find_in_fileSec(name, doc)
+  fileGrp = find_fileGrp(doc)
+  fileGrp.children.find { |el| el.attr('ID') == name }
+end
+
+def find_puid(admid, doc)
+  amdSec = doc.xpath("//mets:amdSec[@ID='#{admid}']")
+  id_event = amdSec.xpath("mets:digiprovMD/mets:mdWrap/mets:xmlData/premis:event/premis:eventType[text()='format identification']/../premis:eventOutcomeInformation/premis:eventOutcome[text()='Positive']/../premis:eventOutcomeDetail/premis:eventOutcomeDetailNote",
+    mets: "http://www.loc.gov/METS/", premis: "info:lc/xmlns/premis-v2")
+  if !id_event.nil?
+    puid = id_event.text
+    label = FPR.format_name puid
+    extension = FPR.extension puid
+
+    data = {}
+    data[:label] = label unless label.nil?
+    data[:puid] = puid
+    data[:extension] = extension unless extension.nil?
+
+    data
+  end
+end
+
+def process_child(element, doc)
+  case element.name
+  when "div"
+    process_directory(element, doc)
+  when "fptr"
+    process_file(element, doc)
+  end
+end
+
+def collect_puids children
+  children.map do |child|
+    if child[:children]
+      collect_puids child[:children]
+    else
+      child[:puid]
+    end
+  end.flatten.uniq
+end
+
+def collect_groups children
+  children.map do |child|
+    if child[:children]
+      collect_groups child[:children]
+    else
+      FPR.group child[:puid]
+    end
+  end.flatten.uniq
+end
+
+def process_directory(dir, doc)
+  children = dir.xpath('mets:div | mets:fptr').map { |e| process_child e, doc }
+  puids = collect_puids children
+  groups = collect_groups children
+
+  {
+    id: SecureRandom.uuid,
+    label: dir.attr('LABEL'),
+    groups: groups,
+    puids: puids,
+    children: children,
+  }
+end
+
+def process_file(file, doc)
+  file_id = file.attr('FILEID')
+  file_info = find_in_fileSec(file_id, doc)
+  adm_id = file_info.attr('ADMID')
+  data = {
+    id: file_id[-36..-1],
+    label: file_info.xpath('mets:FLocat').first.attr('xlink:href'),
+  }
+
+  id_data = find_puid(adm_id, doc)
+  if id_data
+    data.update id_data
+    if !FORMATS[:puids].include? id_data[:puid]
+      FORMATS[:formats] << id_data
+      FORMATS[:puids] << id_data[:puid]
+    end
+  end
+
+  data
+end
+
+def process_structMap(structMap, doc)
+  transfers = structMap.xpath('mets:div').map { |element| process_child(element, doc) }
+  formats = FORMATS[:formats]
+
+  {
+    formats: formats,
+    transfers: transfers,
+  }
+end
+
+def main(argv)
+  doc = parse(argv.first)
+
+  structMap = doc.xpath("//mets:structMap[@LABEL='processed']").first
+
+  raise ValueError, "No processed structMap was found in this file!" if structMap.nil?
+
+  fixture_data = process_structMap(structMap, doc)
+  puts JSON.pretty_generate fixture_data
+
+  return 0
+end
+
+if self.to_s == 'main'
+  begin
+    exit main(ARGV)
+  rescue StandardError => e
+    $stderr.puts e
+    $stderr.puts e.backtrace if ARGV.include? "--debug"
+    exit e.respond_to?(:errno) ? e.errno : 1
+  end
+end
