@@ -98,7 +98,6 @@ def find_puid(admid, doc)
   id_event = amdSec.xpath("mets:digiprovMD/mets:mdWrap/mets:xmlData/premis:event/premis:eventType[text()='format identification']/../premis:eventOutcomeInformation/premis:eventOutcome[text()='Positive']/../premis:eventOutcomeDetail/premis:eventOutcomeDetailNote",
     mets: "http://www.loc.gov/METS/", premis: "info:lc/xmlns/premis-v2")
   if !id_event.nil?
-    puts id_event
     puid = id_event.text
     label = FPR.format_name puid
     extension = FPR.extension puid
@@ -108,7 +107,7 @@ def find_puid(admid, doc)
     data[:puid] = puid
     data[:extension] = extension unless extension.nil?
 
-    data
+    data unless data[:label].nil? || data[:puid].nil?
   end
 end
 
