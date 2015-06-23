@@ -21,7 +21,10 @@ class FPR
   @id_rules = {}
 
   def self.format_name puid
-    get_format_version(puid)["description"]
+    format_version = get_format_version(puid)
+    return if format_version.nil?
+
+    format_version["description"]
   end
 
   def self.group puid
@@ -95,6 +98,7 @@ def find_puid(admid, doc)
   id_event = amdSec.xpath("mets:digiprovMD/mets:mdWrap/mets:xmlData/premis:event/premis:eventType[text()='format identification']/../premis:eventOutcomeInformation/premis:eventOutcome[text()='Positive']/../premis:eventOutcomeDetail/premis:eventOutcomeDetailNote",
     mets: "http://www.loc.gov/METS/", premis: "info:lc/xmlns/premis-v2")
   if !id_event.nil?
+    puts id_event
     puid = id_event.text
     label = FPR.format_name puid
     extension = FPR.extension puid
