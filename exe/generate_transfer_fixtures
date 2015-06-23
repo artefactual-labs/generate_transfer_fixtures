@@ -127,7 +127,7 @@ def collect_puids children
     else
       child[:puid]
     end
-  end.flatten.uniq
+  end.flatten.uniq.reject(&:nil?).reject(&:empty?)
 end
 
 def collect_groups children
