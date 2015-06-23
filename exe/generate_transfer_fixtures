@@ -165,7 +165,10 @@ def process_file(file, doc)
 
   id_data = find_puid(adm_id, doc)
   if id_data
-    data.update id_data
+    data[:format] = id_data[:label] if id_data[:label]
+    data[:puid] = id_data[:puid] if id_data[:puid] && !id_data[:puid].empty?
+    data[:extension] = id_data[:extension] if id_data[:extension]
+
     if !FORMATS[:puids].include? id_data[:puid]
       FORMATS[:formats] << id_data
       FORMATS[:puids] << id_data[:puid]
