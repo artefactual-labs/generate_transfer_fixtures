@@ -160,7 +160,7 @@ def process_file(file, doc)
   adm_id = file_info.attr('ADMID')
   data = {
     id: file_id[-36..-1],
-    label: file_info.xpath('mets:FLocat').first.attr('xlink:href'),
+    label: File.basename(file_info.xpath('mets:FLocat').first.attr('xlink:href')),
   }
 
   id_data = find_puid(adm_id, doc)
