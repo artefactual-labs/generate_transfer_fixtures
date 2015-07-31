@@ -152,6 +152,7 @@ def process_directory(dir, doc)
     puids: puids,
     children: children,
     type: :directory,
+    tags: [],
   }
 end
 
@@ -162,6 +163,7 @@ def process_file(file, doc)
   data = {
     id: file_id[-36..-1],
     label: File.basename(file_info.xpath('mets:FLocat').first.attr('xlink:href')),
+    tags: [],
     type: :file,
   }
 
