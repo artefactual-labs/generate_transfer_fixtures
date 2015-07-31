@@ -151,6 +151,7 @@ def process_directory(dir, doc)
     groups: groups,
     puids: puids,
     children: children,
+    type: :directory,
   }
 end
 
@@ -161,6 +162,7 @@ def process_file(file, doc)
   data = {
     id: file_id[-36..-1],
     label: File.basename(file_info.xpath('mets:FLocat').first.attr('xlink:href')),
+    type: :file,
   }
 
   id_data = find_puid(adm_id, doc)
@@ -180,6 +182,8 @@ end
 
 def process_structMap(structMap, doc)
   transfers = structMap.xpath('mets:div').map { |element| process_child(element, doc) }
+  # top-level directories are special-cased
+  transfers.each { |transfer| transfer[:type] = :transfer }
   formats = FORMATS[:formats]
 
   {
